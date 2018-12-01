@@ -3,21 +3,22 @@ module Main where
 import qualified Data.Set as Set
 import Data.Maybe
 
-main :: IO ()
-main = day1part2
-
 ghci :: IO ()
 ghci = main
 
-day1part1 :: IO ()
-day1part1 = do
-  input <- readFile "input1.txt"
-  print $ sum $ map (read . filter (/= '+')) $ lines input
+main :: IO ()
+main = do
+  day1
 
-day1part2 :: IO ()
-day1part2 = do
+day1 :: IO ()
+day1 = do
   input <- readFile "input1.txt"
   let
-    frequencies = scanl (+) 0 $ map (read . filter (/= '+')) $ cycle $ lines input :: [Int]
-    dupes set (freq : rest) = (if Set.member freq set then [freq] else []) ++ dupes (Set.insert freq set) rest
-  print $ head $ dupes Set.empty frequencies
+    changes = map (read . filter (/= '+')) $ lines input :: [Int]
+    frequencies = scanl (+) 0
+    firstDupe set (freq : rest)
+      | Set.member freq set = freq
+      | otherwise = firstDupe (Set.insert freq set) rest
+
+  print $ sum changes
+  print $ firstDupe Set.empty (frequencies (cycle changes))
