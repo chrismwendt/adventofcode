@@ -1,7 +1,6 @@
 module Main where
 
 import qualified Data.Set as Set
-import Data.Maybe
 
 ghci :: IO ()
 ghci = main
