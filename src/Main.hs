@@ -40,8 +40,8 @@ day2 = do
 
   let
     count p = length . filter p
-    ns n = count ((n `elem`) . Map.elems . Map.fromListWith (+) . map (, 1)) $ lines input
-    checksum = ns 2 * ns 3
+    frequencies = map (Map.elems . Map.fromListWith (+) . map (, 1)) $ lines input
+    checksum = count (2 `elem`) frequencies * count (3 `elem`) frequencies
 
   putStrLn $ "2a: " ++ show checksum
 
