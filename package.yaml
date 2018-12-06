@@ -5,6 +5,9 @@ dependencies:
   - containers
   - monad-loops
   - ilist
+  - megaparsec
+  - array
+  - linear
 executables:
   app:
     source-dirs: src
