@@ -8,6 +8,7 @@ dependencies:
   - megaparsec
   - array
   - linear
+  - safe
 executables:
   app:
     source-dirs: src

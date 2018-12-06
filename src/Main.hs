@@ -12,6 +12,8 @@ import Data.Void
 import Control.Monad.Loops
 import Linear.V2
 import Data.Array
+import Safe
+import Data.Foldable
 
 ghci :: IO ()
 ghci = main
@@ -62,23 +64,29 @@ day3 = do
   let
     int = fromIntegral <$> decimal
 
-    lineParser :: Parsec Void String (Int, Int, Int, Int)
-    lineParser = do
-      char '#' >> int >> string " @ "
+    claimParser :: Parsec Void String (Int, Int, Int, Int, Int)
+    claimParser = do
+      id <- char '#' *> int <* string " @ "
       (left, top) <- (,) <$> decimal <* char ',' <*> decimal
       string ": "
       (width, height) <- (,) <$> decimal <* char 'x' <*> decimal
       char '\n'
-      return (left, top, width, height)
+      return (id, left, top, width, height)
 
-    claimToCells (left, top, width, height) =
-      [ V2 (left + a) (top + b)
+    claimToCells (id, left, top, width, height) =
+      [ (V2 (left + a) (top + b), [id])
       | a <- [0 .. width - 1]
       , b <- [0 .. height - 1]
       ]
 
     size = (V2 0 0, V2 1000 1000)
-    stack claims = accumArray (+) 0 size $ map (, 1) $ (concatMap claimToCells) claims
-    overlap claims = sum $ fmap (\depth -> if depth >= 2 then 1 else 0) $ stack claims
+    stack claims = accumArray (++) [] size $ (concatMap claimToCells) claims
+    measureOverlap claims = sum $ fmap (\ids -> if length ids >= 2 then 1 else 0) $ stack claims
+    findNonOverlapping claims =
+      headMay
+      $ Set.toList . foldl' (flip Set.delete) (Set.fromList (map (\(id, _, _, _, _) -> id) claims))
+      $ concat . filter (\ids -> length ids >= 2)
+      $ toList (stack claims)
 
-  putStrLn $ "3a: " ++ maybe "BUG" (show . overlap) (parseMaybe (many lineParser) input)
+  putStrLn $ "3a: " ++ maybe "BUG" (show . measureOverlap) (parseMaybe (many claimParser) input)
+  putStrLn $ "3b: " ++ maybe "BUG" show (parseMaybe (many claimParser) input >>= findNonOverlapping)
