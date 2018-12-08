@@ -10,6 +10,8 @@ dependencies:
   - linear
   - safe
   - extra
+  - transformers
+  - microlens-platform
 executables:
   app:
     source-dirs: src
