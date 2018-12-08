@@ -9,6 +9,7 @@ dependencies:
   - array
   - linear
   - safe
+  - extra
 executables:
   app:
     source-dirs: src
