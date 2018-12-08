@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Main where
 
@@ -13,9 +14,11 @@ import Data.Void
 import Control.Monad.Loops
 import Linear.V2
 import Data.Array
-import Safe
+import Safe (maximumMay, maximumByMay, maximumDef, headMay)
 import Data.Ord
 import Data.Tuple.Extra
+import Control.Monad.Trans.State.Lazy
+import Lens.Micro.Platform
 import Data.Foldable
 
 ghci :: IO ()
@@ -123,35 +126,34 @@ day4 = do
       return $ (Time y mo d h mi, l)
 
     minute (Time _ _ _ _ m) = m
-    frequencies = Map.fromListWith (+) . map (, 1)
     range a b = [a .. b - 1]
-    keyOfMax = fmap fst . maximumByMay (comparing snd) . Map.toList
-    minuteMode xs = keyOfMax $ frequencies $ concatMap (uncurry range) xs
-    totalSleep = sum . map (\(a, b) -> b - a)
-    groupByKey = Map.fromListWith (++) . map (\(a, b) -> (a, [b]))
-    minuteOnly = map (\(t, g) -> (minute t, g))
-    guardNaps :: [(Minute, Log)] -> [(Int, (Minute, Minute))]
-    guardNaps xs =
-      let
-        go _ [] = []
-        go _ ((t, Begin g) : rest) = go (Just (t, g)) rest
-        go Nothing _ = [] -- error: this means the log did not start with Begin
-        go (Just (_, g)) ((t, Sleep) : rest) = go (Just (t, g)) rest
-        go (Just (t, g)) ((t2, Wake) : rest) = (g, (t, t2)) : go (Just (t2, g)) rest
-      in
-        go Nothing xs
+    maxInMap = maximumByMay (comparing snd) . Map.toList
+    maxInMapBy f = maximumByMay (comparing (f . snd)) . Map.toList
+    maximumDef' f = maximumDef f . toList
+
+    flattenMaps :: (Ord k1, Ord k2) => Map.Map k1 (Map.Map k2 a) -> Map.Map (k1, k2) a
+    flattenMaps =
+      Map.fromList
+      . map (\(k1, (k2, v)) -> ((k1, k2), v))
+      . concatMap (\(k, kvs) -> map (k, ) kvs)
+      . Map.toList . fmap Map.toList
+
+    f (_, _, m) (_, Begin guard) = (guard, 0, m)
+    f (guard, _, m) (start, Sleep) = (guard, start, m)
+    f (guard, start, m) (stop, Wake) = (guard, 0, foldl' (flip add) m (range start stop))
+      where
+      add minute = at guard . non Map.empty . at minute . non 0 %~ (+ 1)
+
+    sleepByMinuteByGuard logs = thd3 $ foldl' f (0, 0, Map.empty) $ map (first minute) $ sort logs
+
     partA logs = do
-      (guard, naps) <- maximumByMay (comparing $ totalSleep . snd)
-        $ Map.toList $ groupByKey $ guardNaps $ minuteOnly $ sort logs
-      minute <- minuteMode naps
-      return $ guard * minute
+      (g, sleepByMinute) <- maxInMapBy sum $ sleepByMinuteByGuard logs
+      (m, _) <- maxInMap sleepByMinute
+      return $ g * m
+
     partB logs = do
-      maxGuardDurationByMinute <- mapM (\(a, b) -> (a, ) <$> maximumByMay (comparing snd) b)
-        $ Map.toList $ fmap Map.toList $ fmap frequencies $ groupByKey
-        $ concatMap ((\(g, ts) -> map (, g) ts) . second (uncurry range))
-        $ guardNaps $ minuteOnly $ sort logs
-      (minute, (guard, _)) <- maximumByMay (comparing (snd . snd)) maxGuardDurationByMinute
-      return $ guard * minute
+      ((g, m), _) <- maxInMap $ flattenMaps $ sleepByMinuteByGuard logs
+      return $ g * m
 
   putStrLn $ "4a: " ++ maybe "BUG" show (parseMaybe (many logParser) input >>= partA)
-  putStrLn $ "4a: " ++ maybe "BUG" show (parseMaybe (many logParser) input >>= partB)
+  putStrLn $ "4b: " ++ maybe "BUG" show (parseMaybe (many logParser) input >>= partB)
