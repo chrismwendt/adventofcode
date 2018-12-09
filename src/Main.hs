@@ -11,14 +11,18 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import Text.Megaparsec.Char.Lexer
 import Data.Void
+import Control.Monad
 import Control.Monad.Loops
 import Linear.V2
 import Data.Array
-import Safe (maximumMay, maximumByMay, maximumDef, headMay)
+import Safe (minimumMay, maximumMay, maximumByMay, maximumDef, headMay)
 import Data.Ord
 import Data.Tuple.Extra
 import Control.Monad.Trans.State.Lazy
 import Lens.Micro.Platform
+import Data.Char
+import Data.Function
+import Control.Error.Util
 import Data.Foldable
 
 ghci :: IO ()
@@ -26,7 +30,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day4
+  day5
 
 firstDupe :: Ord a => [a] -> Maybe a
 firstDupe = go Set.empty
@@ -157,3 +161,43 @@ day4 = do
 
   putStrLn $ "4a: " ++ maybe "BUG" show (parseMaybe (many logParser) input >>= partA)
   putStrLn $ "4b: " ++ maybe "BUG" show (parseMaybe (many logParser) input >>= partB)
+
+data Zipper a = Zipper [a] [a] deriving (Show)
+
+zNew :: [a] -> Zipper a
+zNew as = Zipper [] as
+
+zToList :: Zipper a -> [a]
+zToList (Zipper ls rs) = reverse ls ++ rs
+
+zRight :: Zipper a -> Maybe (Zipper a)
+zRight (Zipper _ []) = Nothing
+zRight (Zipper ls (a : rest)) = Just $ Zipper (a : ls) rest
+
+unique :: Ord a => [a] -> [a]
+unique = Set.toList . Set.fromList
+
+day5 :: IO ()
+day5 = do
+  input <- readFile "input5.txt"
+
+  let
+    lastIteration f a = maybe a (lastIteration f) (f a)
+
+    react :: Zipper Char -> Maybe (Zipper Char)
+    react (Zipper [] _) = Nothing
+    react (Zipper _ []) = Nothing
+    react (Zipper (l : ls) (r : rs)) = if ((/=) `on` isUpper) l r && ((==) `on` toUpper) l r
+      then Just $ Zipper ls rs
+      else Nothing
+
+    fullReact :: [Char] -> [Char]
+    fullReact i = zToList $ lastIteration (\z -> lastIteration react <$> zRight z) $ zNew i
+
+    partA = length $ fullReact input
+    partB = minimumMay
+      $ map (\part -> length $ fullReact $ filter ((/= part) . toUpper) input)
+      $ unique $ map toUpper input
+
+  putStrLn $ "5a: " ++ show partA
+  putStrLn $ "5b: " ++ maybe "BUG" show partB

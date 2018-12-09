@@ -12,6 +12,7 @@ dependencies:
   - extra
   - transformers
   - microlens-platform
+  - errors
 executables:
   app:
     source-dirs: src
