@@ -5,13 +5,7 @@ dependencies:
   - containers
   - monad-loops
   - ilist
-  - megaparsec
-  - array
-  - linear
-  - safe
-  - extra
-  - transformers
-  - microlens-platform
+  - split
 executables:
   app:
     source-dirs: src
