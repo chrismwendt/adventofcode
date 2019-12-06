@@ -30,7 +30,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day5
+  day6
 
 firstDupe :: Ord a => [a] -> Maybe a
 firstDupe = go Set.empty
@@ -201,3 +201,20 @@ day5 = do
 
   putStrLn $ "5a: " ++ show partA
   putStrLn $ "5b: " ++ maybe "BUG" show partB
+
+
+day6 :: IO ()
+day6 = do
+  input <- readFile "input6.sample.txt"
+
+  let
+    int = fromIntegral <$> decimal
+
+    coordParser :: Parsec Void String (Int, Int)
+    coordParser = pure (,) <*> int <* string ", " <*> int <* char '\n'
+
+    partA _ = return ()
+    partB _ = return ()
+
+  putStrLn $ "6a: " ++ maybe "BUG" show (parseMaybe (many coordParser) input >>= partA)
+  putStrLn $ "6b: " ++ maybe "BUG" show (parseMaybe (many coordParser) input >>= partB)
