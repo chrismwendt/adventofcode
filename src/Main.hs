@@ -3,11 +3,13 @@
 module Main where
 
 import Control.Monad.Loops
+import Data.Char
 import Data.List
 import Data.List.Index
 import Data.List.Split
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Ord
 import qualified Data.Set as Set
 
 ghci :: IO ()
@@ -15,7 +17,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day7
+  day8
 
 day1 :: IO ()
 day1 = do
@@ -115,7 +117,7 @@ day6 = do
   let dagpairs = map (splitOn ")") $ lines input
   let m1 = Map.fromList $ map (\(a : b : _) -> (b, a)) dagpairs
   let orbits p = unfoldr (\b -> let x = m1 Map.!? b in dup <$> x) p
-  let path label = Map.fromList $ unfold (\(cl, n) -> (, n + 1) <$> (m1 Map.!? cl)) (label, 0)
+  let path label = Map.fromList $ unfold (\(cl, n) -> (,n + 1) <$> (m1 Map.!? cl)) (label, 0)
   putStrLn $ "1a: " ++ show (sum $ map (length . orbits) $ Map.keys m1)
   putStrLn $ "1b: " ++ show (minimum $ Map.elems $ Map.intersectionWith (+) (path (m1 Map.! "YOU")) (path (m1 Map.! "SAN")))
 
@@ -144,3 +146,17 @@ day7 = do
   let tryfeed phases = let signal = foldl (\prev phase -> run (phase : prev) 0 prog) (0 : signal) phases in signal
   putStrLn $ "1a: " ++ show (maximum $ map try (permutations [0 .. 4]))
   putStrLn $ "1b: " ++ show (maximum $ map (last . tryfeed) (permutations [5 .. 9]))
+
+day8 :: IO ()
+day8 = do
+  input <- readFile "input8.txt"
+  let count f = length . filter f
+  let b = chunksOf (25 * 6) $ map (digitToInt :: Char -> Int) input
+  let a = minimumBy (comparing (count (== 0))) b
+  putStrLn $ "1a: " ++ show (count (== 1) a * count (== 2) a)
+  let view '0' = ' '
+      view '1' = '#'
+      view '2' = '.'
+  let merge '.' a = a
+      merge a _ = a
+  putStrLn $ "1b: " ++ "\n" ++ unlines (foldl1' (zipWith (zipWith merge)) $ chunksOf 6 $ chunksOf 25 $ map view $ input)
