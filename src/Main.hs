@@ -15,7 +15,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day5
+  day7
 
 day1 :: IO ()
 day1 = do
@@ -103,3 +103,44 @@ day5 = do
               other -> error (show (at i))
   putStrLn $ "1a: " ++ show (last $ run [1] 0 prog)
   putStrLn $ "1b: " ++ show (head $ run [5] 0 prog)
+
+dup x = (x, x)
+
+unfold :: (a -> Maybe a) -> a -> [a]
+unfold f z = unfoldr (\b -> dup <$> f b) z
+
+day6 :: IO ()
+day6 = do
+  input <- readFile "input6.txt"
+  let dagpairs = map (splitOn ")") $ lines input
+  let m1 = Map.fromList $ map (\(a : b : _) -> (b, a)) dagpairs
+  let orbits p = unfoldr (\b -> let x = m1 Map.!? b in dup <$> x) p
+  let path label = Map.fromList $ unfold (\(cl, n) -> (, n + 1) <$> (m1 Map.!? cl)) (label, 0)
+  putStrLn $ "1a: " ++ show (sum $ map (length . orbits) $ Map.keys m1)
+  putStrLn $ "1b: " ++ show (minimum $ Map.elems $ Map.intersectionWith (+) (path (m1 Map.! "YOU")) (path (m1 Map.! "SAN")))
+
+day7 :: IO ()
+day7 = do
+  input <- readFile "input7.txt"
+  let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," input)
+  let run input i p =
+        let at = (p Map.!)
+            digit num n = num `div` (10 ^ n) `mod` 10
+            get param = case at i `digit` (param - 1 + 2) of
+              0 -> at (at (i + param))
+              1 -> at (i + param)
+         in case at i `mod` 100 of
+              1 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 + get 2) p)
+              2 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 * get 2) p)
+              3 -> run (tail input) (i + 2) (Map.insert (at (i + 1)) (head input) p)
+              4 -> at (at (i + 1)) : run input (i + 2) p
+              5 -> run input (if get 1 /= 0 then get 2 else i + 3) p
+              6 -> run input (if get 1 == 0 then get 2 else i + 3) p
+              7 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 < get 2 then 1 else 0) p)
+              8 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 == get 2 then 1 else 0) p)
+              99 -> []
+              other -> error (show (at i))
+  let try phases = (foldl (\prev phase -> run (phase : prev) 0 prog) [0] phases)
+  let tryfeed phases = let signal = foldl (\prev phase -> run (phase : prev) 0 prog) (0 : signal) phases in signal
+  putStrLn $ "1a: " ++ show (maximum $ map try (permutations [0 .. 4]))
+  putStrLn $ "1b: " ++ show (maximum $ map (last . tryfeed) (permutations [5 .. 9]))
