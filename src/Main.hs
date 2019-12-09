@@ -17,7 +17,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day8
+  day9
 
 day1 :: IO ()
 day1 = do
@@ -111,6 +111,9 @@ dup x = (x, x)
 unfold :: (a -> Maybe a) -> a -> [a]
 unfold f z = unfoldr (\b -> dup <$> f b) z
 
+unfoldz :: (a -> Maybe a) -> a -> [a]
+unfoldz f z = z : unfoldr (\b -> dup <$> f b) z
+
 day6 :: IO ()
 day6 = do
   input <- readFile "input6.txt"
@@ -160,3 +163,57 @@ day8 = do
   let merge '.' a = a
       merge a _ = a
   putStrLn $ "1b: " ++ "\n" ++ unlines (foldl1' (zipWith (zipWith merge)) $ chunksOf 6 $ chunksOf 25 $ map view $ input)
+
+day9 :: IO ()
+day9 = do
+  input <- readFile "input9.txt"
+  -- input <- return "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"
+  -- input <- return "1102,34915192,34915192,7,4,7,99,0"
+  -- input <- return "104,1125899906842624,99"
+  let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Integer) $ splitOn "," input)
+  let step :: (Integer, [Integer], Integer, Map.Map Integer Integer) -> Maybe (Maybe Integer, Integer, [Integer], Integer, Map.Map Integer Integer)
+      step (rb, input, i, p) =
+        let at si = fromMaybe 0 $ p Map.!? si
+            digit num n = num `div` (10 ^ n) `mod` 10
+            get param = case at i `digit` (param - 1 + 2) of
+              0 -> at (at (i + param))
+              1 -> at (i + param)
+              2 -> at (rb + at (i + param))
+            loc param = case at i `digit` (param - 1 + 2) of
+              0 -> at (i + param)
+              1 -> i + param
+              2 -> rb + at (i + param)
+         in case at i `mod` 100 of
+              1 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (get 1 + get 2) p))
+              2 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (get 1 * get 2) p))
+              3 -> Just (Nothing, rb, (tail input), (i + 2), (Map.insert (loc 1) (head input) p))
+              4 -> Just (Just (get 1), rb, input, (i + 2), p)
+              5 -> Just (Nothing, rb, input, (if get 1 /= 0 then get 2 else i + 3), p)
+              6 -> Just (Nothing, rb, input, (if get 1 == 0 then get 2 else i + 3), p)
+              7 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (if get 1 < get 2 then 1 else 0) p))
+              8 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (if get 1 == get 2 then 1 else 0) p))
+              9 -> Just (Nothing, (rb + get 1), input, (i + 2), p)
+              99 -> Nothing
+              other -> error (show (at i))
+  let output zz = catMaybes $ map (\(mo, _, _, _, _) -> mo) zz
+  let intst zz =
+        map
+          ( \(mo, rb, inp, i, p) ->
+              unwords
+                [ "mo",
+                  show mo,
+                  "rb",
+                  show rb,
+                  -- "inp",
+                  -- show inp,
+                  "i",
+                  show i,
+                  "prog",
+                  "[" ++ unwords (map (\(k, v) -> show k ++ "." ++ show v) $ Map.toList p) ++ "]"
+                ]
+          )
+          zz
+  let run inp = unfoldz (\(mo, a, b, c, d) -> step (a, b, c, d)) (Nothing, 0, inp, 0, prog)
+  writeFile "mine.txt" $ unlines (intst $ run [1])
+  putStrLn $ "1a: " ++ show (head $ output $ run [1])
+  putStrLn $ "1b: " ++ show (head $ output $ run [2])
