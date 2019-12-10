@@ -17,7 +17,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day9
+  day2
 
 day1 :: IO ()
 day1 = do
@@ -26,6 +26,29 @@ day1 = do
   let allfuel modul = sum $ unfoldr (\fuel -> if fuel <= 0 then Nothing else Just (fuel, fuel `div` 3 - 2)) (fuel modul)
   putStrLn $ "1a: " ++ show (sum $ map (fuel . read) $ lines input)
   putStrLn $ "1b: " ++ show (sum $ map (allfuel . read) $ lines input)
+
+run input0 mem0 =
+  let recur input base pc mem =
+        let val i = fromMaybe 0 $ mem Map.!? i
+            digit num n = num `div` (10 ^ n) `mod` 10
+            l param = case val pc `digit` (param - 1 + 2) of
+              0 -> val (pc + param) -- position
+              1 -> pc + param -- immediate
+              2 -> base + val (pc + param) -- relative
+            r = val . l
+         in case val pc `mod` 100 of
+              1 -> recur input base (pc + 4) (Map.insert (l 3) (r 1 + r 2) mem) -- add
+              2 -> recur input base (pc + 4) (Map.insert (l 3) (r 1 * r 2) mem) -- mul
+              3 -> recur (tail input) base (pc + 2) (Map.insert (l 1) (head input) mem) -- input
+              4 -> r 1 : recur input base (pc + 2) mem -- output
+              5 -> recur input base (if r 1 /= 0 then r 2 else pc + 3) mem -- jnz
+              6 -> recur input base (if r 1 == 0 then r 2 else pc + 3) mem -- jz
+              7 -> recur input base (pc + 4) (Map.insert (l 3) (if r 1 < r 2 then 1 else 0) mem) -- lt
+              8 -> recur input base (pc + 4) (Map.insert (l 3) (if r 1 == r 2 then 1 else 0) mem) -- eq
+              9 -> recur input (base + r 1) (pc + 2) mem -- adjust base
+              99 -> [] -- halt
+              other -> error ("Invalid opcode " ++ show (val pc))
+   in recur input0 0 0 mem0
 
 day2 :: IO ()
 day2 = do
@@ -86,25 +109,8 @@ day5 :: IO ()
 day5 = do
   input <- readFile "input5.txt"
   let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," input)
-  let run input i p =
-        let at = (p Map.!)
-            digit num n = num `div` (10 ^ n) `mod` 10
-            get param = case at i `digit` (param - 1 + 2) of
-              0 -> at (at (i + param))
-              1 -> at (i + param)
-         in case at i `mod` 100 of
-              1 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 + get 2) p)
-              2 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 * get 2) p)
-              3 -> run (tail input) (i + 2) (Map.insert (at (i + 1)) (head input) p)
-              4 -> at (at (i + 1)) : run input (i + 2) p
-              5 -> run input (if get 1 /= 0 then get 2 else i + 3) p
-              6 -> run input (if get 1 == 0 then get 2 else i + 3) p
-              7 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 < get 2 then 1 else 0) p)
-              8 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 == get 2 then 1 else 0) p)
-              99 -> []
-              other -> error (show (at i))
-  putStrLn $ "1a: " ++ show (last $ run [1] 0 prog)
-  putStrLn $ "1b: " ++ show (head $ run [5] 0 prog)
+  putStrLn $ "1a: " ++ show (last $ run [1] prog)
+  putStrLn $ "1b: " ++ show (head $ run [5] prog)
 
 dup x = (x, x)
 
@@ -128,26 +134,9 @@ day7 :: IO ()
 day7 = do
   input <- readFile "input7.txt"
   let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," input)
-  let run input i p =
-        let at = (p Map.!)
-            digit num n = num `div` (10 ^ n) `mod` 10
-            get param = case at i `digit` (param - 1 + 2) of
-              0 -> at (at (i + param))
-              1 -> at (i + param)
-         in case at i `mod` 100 of
-              1 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 + get 2) p)
-              2 -> run input (i + 4) (Map.insert (at (i + 3)) (get 1 * get 2) p)
-              3 -> run (tail input) (i + 2) (Map.insert (at (i + 1)) (head input) p)
-              4 -> at (at (i + 1)) : run input (i + 2) p
-              5 -> run input (if get 1 /= 0 then get 2 else i + 3) p
-              6 -> run input (if get 1 == 0 then get 2 else i + 3) p
-              7 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 < get 2 then 1 else 0) p)
-              8 -> run input (i + 4) (Map.insert (at (i + 3)) (if get 1 == get 2 then 1 else 0) p)
-              99 -> []
-              other -> error (show (at i))
-  let try phases = (foldl (\prev phase -> run (phase : prev) 0 prog) [0] phases)
-  let tryfeed phases = let signal = foldl (\prev phase -> run (phase : prev) 0 prog) (0 : signal) phases in signal
-  putStrLn $ "1a: " ++ show (maximum $ map try (permutations [0 .. 4]))
+  let try phases = (foldl (\prev phase -> run (phase : prev) prog) [0] phases)
+  let tryfeed phases = let signal = foldl (\prev phase -> run (phase : prev) prog) (0 : signal) phases in signal
+  putStrLn $ "1a: " ++ show (maximum $ map (last . try) (permutations [0 .. 4]))
   putStrLn $ "1b: " ++ show (maximum $ map (last . tryfeed) (permutations [5 .. 9]))
 
 day8 :: IO ()
@@ -166,54 +155,7 @@ day8 = do
 
 day9 :: IO ()
 day9 = do
-  input <- readFile "input9.txt"
-  -- input <- return "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"
-  -- input <- return "1102,34915192,34915192,7,4,7,99,0"
-  -- input <- return "104,1125899906842624,99"
-  let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Integer) $ splitOn "," input)
-  let step :: (Integer, [Integer], Integer, Map.Map Integer Integer) -> Maybe (Maybe Integer, Integer, [Integer], Integer, Map.Map Integer Integer)
-      step (rb, input, i, p) =
-        let at si = fromMaybe 0 $ p Map.!? si
-            digit num n = num `div` (10 ^ n) `mod` 10
-            get param = case at i `digit` (param - 1 + 2) of
-              0 -> at (at (i + param))
-              1 -> at (i + param)
-              2 -> at (rb + at (i + param))
-            loc param = case at i `digit` (param - 1 + 2) of
-              0 -> at (i + param)
-              1 -> i + param
-              2 -> rb + at (i + param)
-         in case at i `mod` 100 of
-              1 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (get 1 + get 2) p))
-              2 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (get 1 * get 2) p))
-              3 -> Just (Nothing, rb, (tail input), (i + 2), (Map.insert (loc 1) (head input) p))
-              4 -> Just (Just (get 1), rb, input, (i + 2), p)
-              5 -> Just (Nothing, rb, input, (if get 1 /= 0 then get 2 else i + 3), p)
-              6 -> Just (Nothing, rb, input, (if get 1 == 0 then get 2 else i + 3), p)
-              7 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (if get 1 < get 2 then 1 else 0) p))
-              8 -> Just (Nothing, rb, input, (i + 4), (Map.insert (loc 3) (if get 1 == get 2 then 1 else 0) p))
-              9 -> Just (Nothing, (rb + get 1), input, (i + 2), p)
-              99 -> Nothing
-              other -> error (show (at i))
-  let output zz = catMaybes $ map (\(mo, _, _, _, _) -> mo) zz
-  let intst zz =
-        map
-          ( \(mo, rb, inp, i, p) ->
-              unwords
-                [ "mo",
-                  show mo,
-                  "rb",
-                  show rb,
-                  -- "inp",
-                  -- show inp,
-                  "i",
-                  show i,
-                  "prog",
-                  "[" ++ unwords (map (\(k, v) -> show k ++ "." ++ show v) $ Map.toList p) ++ "]"
-                ]
-          )
-          zz
-  let run inp = unfoldz (\(mo, a, b, c, d) -> step (a, b, c, d)) (Nothing, 0, inp, 0, prog)
-  writeFile "mine.txt" $ unlines (intst $ run [1])
-  putStrLn $ "1a: " ++ show (head $ output $ run [1])
-  putStrLn $ "1b: " ++ show (head $ output $ run [2])
+  in0 <- readFile "input9.txt"
+  let mem0 = Map.fromList . zip [0 ..] $ map read $ splitOn "," in0
+  putStrLn $ "1a: " ++ show (head $ run [1] mem0)
+  putStrLn $ "1b: " ++ show (head $ run [2] mem0)
