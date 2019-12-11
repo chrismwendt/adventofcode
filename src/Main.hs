@@ -1,23 +1,28 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
 module Main where
 
 import Control.Monad.Loops
 import Data.Char
+import Data.Function
 import Data.List
+import Data.List.Extra hiding (chunksOf, splitOn)
 import Data.List.Index
 import Data.List.Split
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Ord
+import Data.Ratio
 import qualified Data.Set as Set
+import Text.Printf
 
 ghci :: IO ()
 ghci = main
 
 main :: IO ()
 main = do
-  day2
+  day10
 
 day1 :: IO ()
 day1 = do
@@ -159,3 +164,36 @@ day9 = do
   let mem0 = Map.fromList . zip [0 ..] $ map read $ splitOn "," in0
   putStrLn $ "1a: " ++ show (head $ run [1] mem0)
   putStrLn $ "1b: " ++ show (head $ run [2] mem0)
+
+v2minus :: (Int, Int) -> (Int, Int) -> (Int, Int)
+v2minus (ax, ay) (bx, by) = (ax - bx, ay - by)
+
+v2plus :: (Int, Int) -> (Int, Int) -> (Int, Int)
+v2plus (ax, ay) (bx, by) = (ax + bx, ay + by)
+
+man :: (Int, Int) -> Int
+man (x, y) = abs x + abs y
+
+day10 :: IO ()
+day10 = do
+  in0 <- readFile "input10.txt"
+  let asteroids = catMaybes $ concatMap (\(y, row :: String) -> zipWith (\x c -> if c == '.' then Nothing else Just (x, y)) [0 ..] row) $ zip [0 ..] (lines in0)
+      -- returns a value that can be used to sort vectors by angle
+      angl (0, 0) = error "angl on (0, 0)"
+      angl (x, y) =
+        let slope = (if abs x < abs y then negate (x % y) else y % x) / 2
+            quadrant =
+              foldl'
+                (\acc f -> 2 * acc + if f then 1 else 0)
+                0
+                [ x < 0 || (x == 0 && y > 0),
+                  y == 0 || (x > 0 && y > 0) || (x < 0 && y < 0),
+                  slope < 0
+                ]
+         in quadrant + slope
+      bestCoords = maximumOn uniqueAngles asteroids
+      others = filter (/= bestCoords) asteroids
+      uniqueAngles coords = length $ nubOrdOn angl $ map (`v2minus` coords) $ filter (/= coords) asteroids
+      vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortBy (comparing man)) $ groupSortOn angl $ map (`v2minus` bestCoords) others
+  putStrLn $ "1a: " ++ show (uniqueAngles bestCoords)
+  putStrLn $ "1b: " ++ show (let (x, y) = vaporize !! (200 - 1) in 100 * x + y)

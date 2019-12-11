@@ -6,6 +6,7 @@ dependencies:
   - monad-loops
   - ilist
   - split
+  - extra
 executables:
   app:
     source-dirs: src
