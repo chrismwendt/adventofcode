@@ -22,7 +22,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day10
+  day11
 
 day1 :: IO ()
 day1 = do
@@ -32,28 +32,38 @@ day1 = do
   putStrLn $ "1a: " ++ show (sum $ map (fuel . read) $ lines input)
   putStrLn $ "1b: " ++ show (sum $ map (allfuel . read) $ lines input)
 
+type State = (Int, Int, Map.Map Int Int)
+
+data Step = Halt | Input (Int -> State) | Output (Int, State)
+
+step :: State -> Step
+step (base, pc, mem) =
+  let val i = fromMaybe 0 $ mem Map.!? i
+      digit num n = num `div` (10 ^ n) `mod` 10
+      l param = case val pc `digit` (param - 1 + 2) of
+        0 -> val (pc + param) -- position
+        1 -> pc + param -- immediate
+        2 -> base + val (pc + param) -- relative
+      r = val . l
+   in case val pc `mod` 100 of
+        1 -> step (base, pc + 4, Map.insert (l 3) (r 1 + r 2) mem) -- add
+        2 -> step (base, pc + 4, Map.insert (l 3) (r 1 * r 2) mem) -- mul
+        3 -> Input (\i -> (base, pc + 2, Map.insert (l 1) i mem)) -- input
+        4 -> Output (r 1, (base, pc + 2, mem)) -- output
+        5 -> step (base, (if r 1 /= 0 then r 2 else pc + 3), mem) -- jnz
+        6 -> step (base, (if r 1 == 0 then r 2 else pc + 3), mem) -- jz
+        7 -> step (base, pc + 4, Map.insert (l 3) (if r 1 < r 2 then 1 else 0) mem) -- lt
+        8 -> step (base, pc + 4, Map.insert (l 3) (if r 1 == r 2 then 1 else 0) mem) -- eq
+        9 -> step (base + r 1, pc + 2, mem) -- adjust base
+        99 -> Halt
+        other -> error ("Invalid opcode " ++ show (val pc))
+
 run input0 mem0 =
-  let recur input base pc mem =
-        let val i = fromMaybe 0 $ mem Map.!? i
-            digit num n = num `div` (10 ^ n) `mod` 10
-            l param = case val pc `digit` (param - 1 + 2) of
-              0 -> val (pc + param) -- position
-              1 -> pc + param -- immediate
-              2 -> base + val (pc + param) -- relative
-            r = val . l
-         in case val pc `mod` 100 of
-              1 -> recur input base (pc + 4) (Map.insert (l 3) (r 1 + r 2) mem) -- add
-              2 -> recur input base (pc + 4) (Map.insert (l 3) (r 1 * r 2) mem) -- mul
-              3 -> recur (tail input) base (pc + 2) (Map.insert (l 1) (head input) mem) -- input
-              4 -> r 1 : recur input base (pc + 2) mem -- output
-              5 -> recur input base (if r 1 /= 0 then r 2 else pc + 3) mem -- jnz
-              6 -> recur input base (if r 1 == 0 then r 2 else pc + 3) mem -- jz
-              7 -> recur input base (pc + 4) (Map.insert (l 3) (if r 1 < r 2 then 1 else 0) mem) -- lt
-              8 -> recur input base (pc + 4) (Map.insert (l 3) (if r 1 == r 2 then 1 else 0) mem) -- eq
-              9 -> recur input (base + r 1) (pc + 2) mem -- adjust base
-              99 -> [] -- halt
-              other -> error ("Invalid opcode " ++ show (val pc))
-   in recur input0 0 0 mem0
+  let recur input state = case step state of
+        Halt -> []
+        Input feed -> recur (tail input) $ feed (head input)
+        Output (o, state') -> o : recur input state'
+   in recur input0 (0, 0, mem0)
 
 day2 :: IO ()
 day2 = do
@@ -197,3 +207,35 @@ day10 = do
       vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortBy (comparing man)) $ groupSortOn angl $ map (`v2minus` bestCoords) others
   putStrLn $ "1a: " ++ show (uniqueAngles bestCoords)
   putStrLn $ "1b: " ++ show (let (x, y) = vaporize !! (200 - 1) in 100 * x + y)
+
+day11 :: IO ()
+day11 = do
+  in0 <- readFile "input11.txt"
+  let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," in0)
+  let hull color0 =
+        let recur :: State -> Map.Map (Int, Int) Int -> Map.Map (Int, Int) () -> (Int, Int) -> Int -> (Map.Map (Int, Int) Int, Map.Map (Int, Int) ())
+            recur state h ptd pos dir = case step state of
+              Halt -> (h, ptd)
+              Input feed -> recur (feed (fromMaybe 0 (h Map.!? pos))) h ptd pos dir
+              Output (color, state') -> case step state' of
+                Output (turn, state'') ->
+                  let dir' = (if turn == 0 then (+ negate 1) else (+ 1)) dir `mod` 4
+                      pos' = case dir' of
+                        0 -> pos `v2plus` (0, -1)
+                        1 -> pos `v2plus` (1, 0)
+                        2 -> pos `v2plus` (0, 1)
+                        3 -> pos `v2plus` (-1, 0)
+                   in recur state'' (Map.insert pos color h) (Map.insert pos () ptd) pos' dir'
+                Halt -> error "bad halt"
+                Input _ -> error "bad input"
+         in recur (0, 0, prog) (Map.singleton (0, 0) color0) Map.empty (0, 0) 0
+  putStrLn $ "1a: " ++ show (Map.size $ snd (hull 0))
+  let pretty hull =
+        ("\n" ++) $
+          unlines
+            [ [ if fromMaybe 0 (hull Map.!? (x, y)) == 1 then '#' else '.'
+                | x <- [0 .. maximum (map fst $ Map.keys hull)]
+              ]
+              | y <- [0 .. maximum (map snd $ Map.keys hull)]
+            ]
+  putStrLn $ "1b: " ++ pretty (fst $ hull 1)
