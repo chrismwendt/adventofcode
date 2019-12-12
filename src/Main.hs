@@ -195,23 +195,17 @@ day10 :: IO ()
 day10 = do
   in0 <- readFile "input10.txt"
   let asteroids = catMaybes $ concatMap (\(y, row :: String) -> zipWith (\x c -> if c == '.' then Nothing else Just (x, y)) [0 ..] row) $ zip [0 ..] (lines in0)
+      bestCoords = maximumOn uniqueAngles asteroids
+      others = filter (/= bestCoords) asteroids
       -- returns a value that can be used to sort vectors by angle
       angl (0, 0) = error "angl on (0, 0)"
       angl (x, y) =
-        let slope = (if abs x < abs y then negate (x % y) else y % x) / 2
-            quadrant =
-              foldl'
-                (\acc f -> 2 * acc + if f then 1 else 0)
-                0
-                [ x < 0 || (x == 0 && y > 0),
-                  y == 0 || (x > 0 && y > 0) || (x < 0 && y < 0),
-                  slope < 0
-                ]
-         in quadrant + slope
-      bestCoords = maximumOn uniqueAngles asteroids
-      others = filter (/= bestCoords) asteroids
+        let d = gcd x y
+            -- x y -> y -x
+            -- but negated y and outer to get: [-pi, pi)
+          in negate $ atan2 (fromIntegral (x `div` d)) (fromIntegral (y `div` d))
       uniqueAngles coords = length $ uniqueOn angl $ map (`v2minus` coords) $ filter (/= coords) asteroids
-      vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortBy (comparing man)) $ groupOn angl $ map (`v2minus` bestCoords) others
+      vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortOn man) $ groupOn angl $ map (`v2minus` bestCoords) others
   putStrLn $ "1a: " ++ show (uniqueAngles bestCoords)
   putStrLn $ "1b: " ++ show (let (x, y) = vaporize !! (200 - 1) in 100 * x + y)
 
