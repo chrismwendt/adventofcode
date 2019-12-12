@@ -22,7 +22,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day10
+  day12
 
 day1 :: IO ()
 day1 = do
@@ -240,3 +240,23 @@ day11 = do
               | y <- [0 .. maximum (map snd $ Map.keys hull)]
             ]
   putStrLn $ "1b: " ++ pretty (fst $ hull 1)
+
+day12 :: IO ()
+day12 = do
+  in0 <- readFile "input12.txt"
+  let parse line = map (fst . head . reads) $ drop 1 $ splitOn "=" line
+      sys0 = map (map (,0) . parse) $ lines in0
+      energy i =
+        (sum . map abs . map fst) i *
+        (sum . map abs . map snd) i
+      step1 sys =
+        let upd (p, v) = let v' = v + sum (map (\(o, _) -> signum (o - p)) sys) in (p + v', v')
+        in map upd sys
+      period sys1 =
+        let (_, poss) = until
+              (\(sys, seen) -> sys `Set.member` seen)
+              (\(sys, seen) -> (step1 sys, Set.insert sys seen))
+              (sys1, Set.empty)
+        in Set.size poss
+  putStrLn $ "1a: " ++ show (sum $ map energy $ transpose $ (!! 1000) $ iterate (map step1) (transpose sys0))
+  putStrLn $ "1b: " ++ show (foldl' lcm 1 (map (\axis -> period (map (!! axis) sys0)) [0 .. 2]))
