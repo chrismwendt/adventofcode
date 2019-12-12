@@ -7,7 +7,7 @@ import Control.Monad.Loops
 import Data.Char
 import Data.Function
 import Data.List
-import Data.List.Extra hiding (chunksOf, splitOn)
+import Data.List.Extra (maximumOn)
 import Data.List.Index
 import Data.List.Split
 import qualified Data.Map as Map
@@ -22,7 +22,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day11
+  day10
 
 day1 :: IO ()
 day1 = do
@@ -184,6 +184,13 @@ v2plus (ax, ay) (bx, by) = (ax + bx, ay + by)
 man :: (Int, Int) -> Int
 man (x, y) = abs x + abs y
 
+uniqueOn :: Ord b => (a -> b) -> [a] -> [a]
+uniqueOn proj as = Map.elems $ Map.fromList $ map (\a -> (proj a, a)) as
+
+-- sorts by proj
+groupOn :: Ord b => (a -> b) -> [a] -> [[a]]
+groupOn proj as = Map.elems $ Map.fromListWith (++) $ map (\a -> (proj a, [a])) as
+
 day10 :: IO ()
 day10 = do
   in0 <- readFile "input10.txt"
@@ -203,8 +210,8 @@ day10 = do
          in quadrant + slope
       bestCoords = maximumOn uniqueAngles asteroids
       others = filter (/= bestCoords) asteroids
-      uniqueAngles coords = length $ nubOrdOn angl $ map (`v2minus` coords) $ filter (/= coords) asteroids
-      vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortBy (comparing man)) $ groupSortOn angl $ map (`v2minus` bestCoords) others
+      uniqueAngles coords = length $ uniqueOn angl $ map (`v2minus` coords) $ filter (/= coords) asteroids
+      vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortBy (comparing man)) $ groupOn angl $ map (`v2minus` bestCoords) others
   putStrLn $ "1a: " ++ show (uniqueAngles bestCoords)
   putStrLn $ "1b: " ++ show (let (x, y) = vaporize !! (200 - 1) in 100 * x + y)
 
