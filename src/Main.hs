@@ -1,5 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
@@ -16,13 +19,19 @@ import Data.Ord
 import Data.Ratio
 import qualified Data.Set as Set
 import Text.Printf
+import Conduit
+import qualified Data.Conduit.List as CL
+import System.Random
+import Data.IORef
+import Control.Monad
+import System.IO
 
 ghci :: IO ()
 ghci = main
 
 main :: IO ()
 main = do
-  day12
+  day13
 
 day1 :: IO ()
 day1 = do
@@ -109,6 +118,27 @@ run input0 mem0 =
         IOInput feed -> recur (tail input) $ feed (head input)
         IOOutput (o, state') -> o : recur input state'
    in recur input0 (0, 0, mem0)
+
+runio :: Map.Map Int Int -> ConduitT Int Int IO ()
+runio mem0 =
+  let recur :: State -> ConduitT Int Int IO ()
+      recur state = case stepio state of
+        IOHalt -> return ()
+        IOInput feed -> await >>= \case
+          Nothing -> liftIO $ putStrLn ("error: no input left\nstate: " ++ show state)
+          Just i -> recur (feed i)
+        IOOutput (o, state') -> yield o >> recur state'
+  in recur (0, 0, mem0)
+
+runioask :: Map.Map Int Int -> (IO Int) -> IO (IO (Maybe Int))
+runioask mem0 ask = do
+  stater <- newIORef (0, 0, mem0)
+  let loop state = do
+        case stepio state of
+          IOHalt -> return Nothing
+          IOInput feed -> ask >>= loop . feed
+          IOOutput (o, state') -> writeIORef stater state' >> return (Just o)
+  return (readIORef stater >>= loop)
 
 day2 :: IO ()
 day2 = do
@@ -305,3 +335,49 @@ day12 = do
         in Set.size poss
   putStrLn $ "1a: " ++ show (sum $ map energy $ transpose $ (!! 1000) $ iterate (map step1) (transpose sys0))
   putStrLn $ "1b: " ++ show (foldl' lcm 1 (map (\axis -> period (map (!! axis) sys0)) [0 .. 2]))
+
+prettyBy :: Map.Map (Int, Int) a -> (Maybe a -> Char) -> String
+prettyBy m f = unlines $ do
+  y <- [0 .. foldl' max 0 (map snd $ Map.keys m)]
+  return $ do
+    x <- [0 .. foldl' max 0 (map fst $ Map.keys m)]
+    return $ f (m Map.!? (x, y))
+
+day13 :: IO ()
+day13 = do
+  in0 <- readFile "input13.txt"
+  let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," in0)
+  putStrLn $ "1a: " ++ show (length $ filter (== 2) $ map (\[_, _, tile] -> tile) $ chunksOf 3 $ run [] prog)
+  tilesr <- newIORef Map.empty
+  ballxr <- newIORef 0
+  paddlexr <- newIORef 0
+  let update x y tile = do
+        atomicModifyIORef' tilesr (\tiles -> (Map.insert (x, y) tile tiles, ()))
+        when (tile == 4) $ writeIORef ballxr x
+        when (tile == 3) $ writeIORef paddlexr x
+      joystick = repeatMC $ liftIO $ do
+        ballx <- readIORef ballxr
+        paddlex <- readIORef paddlexr
+        return $ signum $ ballx - paddlex
+      output = await >>= \case
+        Nothing -> return 0
+        Just [-1, 0, score] -> do
+          tiles <- liftIO $ readIORef tilesr
+          if all (/= 2) $ Map.elems tiles
+            then return score
+            else output
+        Just [x, y, tile] -> do
+          liftIO $ update x y tile
+          output
+  score <- runConduit $ joystick .| runio (Map.insert 0 2 prog) .| chunksOfC 3 .| output
+  putStrLn $ "1b: " ++ show score
+
+chunksOfC :: Monad m => Int -> ConduitT a [a] m ()
+chunksOfC n = if n > 0 then loop n id else error $ "chunksOf size must be positive (given " ++ show n ++ ")"
+  where
+    loop 0 rest = yield (rest []) >> loop n id
+    loop count rest = await >>= \case
+      Nothing -> case rest [] of
+        [] -> return ()
+        nonempty -> yield nonempty
+      Just a -> loop (count - 1) (rest . (a :))
