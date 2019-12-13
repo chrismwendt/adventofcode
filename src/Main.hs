@@ -34,9 +34,39 @@ day1 = do
 
 type State = (Int, Int, Map.Map Int Int)
 
-data Step = Halt | Input (Int -> State) | Output (Int, State)
+data SingleStep = Halt | Input (Int -> State) | Output (Int, State) | Continue State
 
-step :: State -> Step
+data StepIO = IOHalt | IOInput (Int -> State) | IOOutput (Int, State)
+
+explain :: State -> String
+explain (base, pc, mem) =
+  let val i = fromMaybe 0 $ mem Map.!? i
+      digit num n = num `div` (10 ^ n) `mod` 10
+      l param = case val pc `digit` (param - 1 + 2) of
+        0 -> val (pc + param) -- position
+        1 -> pc + param -- immediate
+        2 -> base + val (pc + param) -- relative
+      r = val . l
+      pre n =
+        let parens s = "(" ++ s ++ ")"
+            args = if n > 0
+              then "args " ++ parens (concat $ take 4 $ (map (printf "%-7d" . val) [pc+1 .. pc+n+1]) ++ repeat "       ")
+              else ""
+        in printf "base %-7d pc %-7d instr %-7d" base pc (val pc) ++ args
+  in case val pc `mod` 100 of
+        1 -> pre 3 ++ printf " mem[%d] = (mem[%d] (%d) + mem[%d] (%d)) (%d)" (l 3) (l 1) (r 1) (l 2) (r 2) (r 1 + r 2)
+        2 -> pre 3 ++ printf " mem[%d] = (mem[%d] (%d) * mem[%d] (%d)) (%d)" (l 3) (l 1) (r 1) (l 2) (r 2) (r 1 * r 2)
+        3 -> pre 1 ++ printf " input into mem[%d]" (l 3)
+        4 -> pre 0 ++ printf " output mem[%d] (%d)" (l 1) (r 1)
+        5 -> pre 2 ++ printf " if mem[%d] (%d) != 0 then pc = mem[%d] (%d) else noop" (l 1) (r 1) (l 2) (r 2)
+        6 -> pre 2 ++ printf " if mem[%d] (%d) == 0 then pc = mem[%d] (%d) else noop" (l 1) (r 1) (l 2) (r 2)
+        7 -> pre 3 ++ printf " if mem[%d] (%d) < mem[%d] (%d) then mem[%d] = 1 else mem[%d] = 0" (l 1) (r 1) (l 2) (r 2) (l 3) (l 3)
+        8 -> pre 3 ++ printf " if mem[%d] (%d) == mem[%d] (%d) then mem[%d] = 1 else mem[%d] = 0" (l 1) (r 1) (l 2) (r 2) (l 3) (l 3)
+        9 -> pre 1 ++ printf " add mem[%d] (%d) to base" (l 1) (r 1)
+        99 -> ""
+        other -> error ("Invalid opcode " ++ show (val pc))
+
+step :: State -> SingleStep
 step (base, pc, mem) =
   let val i = fromMaybe 0 $ mem Map.!? i
       digit num n = num `div` (10 ^ n) `mod` 10
@@ -46,23 +76,38 @@ step (base, pc, mem) =
         2 -> base + val (pc + param) -- relative
       r = val . l
    in case val pc `mod` 100 of
-        1 -> step (base, pc + 4, Map.insert (l 3) (r 1 + r 2) mem) -- add
-        2 -> step (base, pc + 4, Map.insert (l 3) (r 1 * r 2) mem) -- mul
+        1 -> Continue (base, pc + 4, Map.insert (l 3) (r 1 + r 2) mem) -- add
+        2 -> Continue (base, pc + 4, Map.insert (l 3) (r 1 * r 2) mem) -- mul
         3 -> Input (\i -> (base, pc + 2, Map.insert (l 1) i mem)) -- input
         4 -> Output (r 1, (base, pc + 2, mem)) -- output
-        5 -> step (base, (if r 1 /= 0 then r 2 else pc + 3), mem) -- jnz
-        6 -> step (base, (if r 1 == 0 then r 2 else pc + 3), mem) -- jz
-        7 -> step (base, pc + 4, Map.insert (l 3) (if r 1 < r 2 then 1 else 0) mem) -- lt
-        8 -> step (base, pc + 4, Map.insert (l 3) (if r 1 == r 2 then 1 else 0) mem) -- eq
-        9 -> step (base + r 1, pc + 2, mem) -- adjust base
+        5 -> Continue (base, (if r 1 /= 0 then r 2 else pc + 3), mem) -- jnz
+        6 -> Continue (base, (if r 1 == 0 then r 2 else pc + 3), mem) -- jz
+        7 -> Continue (base, pc + 4, Map.insert (l 3) (if r 1 < r 2 then 1 else 0) mem) -- lt
+        8 -> Continue (base, pc + 4, Map.insert (l 3) (if r 1 == r 2 then 1 else 0) mem) -- eq
+        9 -> Continue (base + r 1, pc + 2, mem) -- adjust base
         99 -> Halt
         other -> error ("Invalid opcode " ++ show (val pc))
 
-run input0 mem0 =
-  let recur input state = case step state of
+stepio :: State -> StepIO
+stepio state = case step state of
+  Halt -> IOHalt
+  Input i -> IOInput i
+  Output i -> IOOutput i
+  Continue state' -> stepio state'
+
+instrument input0 mem0 =
+  let recur input state = state : case step state of
         Halt -> []
         Input feed -> recur (tail input) $ feed (head input)
-        Output (o, state') -> o : recur input state'
+        Output (o, state') -> recur input state'
+        Continue state' -> recur input state'
+   in recur input0 (0, 0, mem0)
+
+run input0 mem0 =
+  let recur input state = case stepio state of
+        IOHalt -> []
+        IOInput feed -> recur (tail input) $ feed (head input)
+        IOOutput (o, state') -> o : recur input state'
    in recur input0 (0, 0, mem0)
 
 day2 :: IO ()
