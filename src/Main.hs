@@ -1,14 +1,18 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Main where
 
+import Conduit
+import Control.Monad
 import Control.Monad.Loops
 import Data.Char
+import qualified Data.Conduit.List as CL
 import Data.Function
+import Data.IORef
 import Data.List
 import Data.List.Extra (maximumOn)
 import Data.List.Index
@@ -18,13 +22,9 @@ import Data.Maybe
 import Data.Ord
 import Data.Ratio
 import qualified Data.Set as Set
-import Text.Printf
-import Conduit
-import qualified Data.Conduit.List as CL
-import System.Random
-import Data.IORef
-import Control.Monad
 import System.IO
+import System.Random
+import Text.Printf
 
 ghci :: IO ()
 ghci = main
@@ -58,11 +58,12 @@ explain (base, pc, mem) =
       r = val . l
       pre n =
         let parens s = "(" ++ s ++ ")"
-            args = if n > 0
-              then "args " ++ parens (concat $ take 4 $ (map (printf "%-7d" . val) [pc+1 .. pc+n+1]) ++ repeat "       ")
-              else ""
-        in printf "base %-7d pc %-7d instr %-7d" base pc (val pc) ++ args
-  in case val pc `mod` 100 of
+            args =
+              if n > 0
+                then "args " ++ parens (concat $ take 4 $ (map (printf "%-7d" . val) [pc + 1 .. pc + n + 1]) ++ repeat "       ")
+                else ""
+         in printf "base %-7d pc %-7d instr %-7d" base pc (val pc) ++ args
+   in case val pc `mod` 100 of
         1 -> pre 3 ++ printf " mem[%d] = (mem[%d] (%d) + mem[%d] (%d)) (%d)" (l 3) (l 1) (r 1) (l 2) (r 2) (r 1 + r 2)
         2 -> pre 3 ++ printf " mem[%d] = (mem[%d] (%d) * mem[%d] (%d)) (%d)" (l 3) (l 1) (r 1) (l 2) (r 2) (r 1 * r 2)
         3 -> pre 1 ++ printf " input into mem[%d]" (l 3)
@@ -128,7 +129,7 @@ runio mem0 =
           Nothing -> liftIO $ putStrLn ("error: no input left\nstate: " ++ show state)
           Just i -> recur (feed i)
         IOOutput (o, state') -> yield o >> recur state'
-  in recur (0, 0, mem0)
+   in recur (0, 0, mem0)
 
 runioask :: Map.Map Int Int -> (IO Int) -> IO (IO (Maybe Int))
 runioask mem0 ask = do
@@ -276,9 +277,9 @@ day10 = do
       angl (0, 0) = error "angl on (0, 0)"
       angl (x, y) =
         let d = gcd x y
-            -- x y -> y -x
+         in -- x y -> y -x
             -- but negated y and outer to get: [-pi, pi)
-          in negate $ atan2 (fromIntegral (x `div` d)) (fromIntegral (y `div` d))
+            negate $ atan2 (fromIntegral (x `div` d)) (fromIntegral (y `div` d))
       uniqueAngles coords = length $ uniqueOn angl $ map (`v2minus` coords) $ filter (/= coords) asteroids
       vaporize = map (`v2plus` bestCoords) $ concat $ transpose $ map (sortOn man) $ groupOn angl $ map (`v2minus` bestCoords) others
   putStrLn $ "1a: " ++ show (uniqueAngles bestCoords)
@@ -322,17 +323,18 @@ day12 = do
   let parse line = map (fst . head . reads) $ drop 1 $ splitOn "=" line
       sys0 = map (map (,0) . parse) $ lines in0
       energy i =
-        (sum . map abs . map fst) i *
-        (sum . map abs . map snd) i
+        (sum . map abs . map fst) i
+          * (sum . map abs . map snd) i
       step1 sys =
         let upd (p, v) = let v' = v + sum (map (\(o, _) -> signum (o - p)) sys) in (p + v', v')
-        in map upd sys
+         in map upd sys
       period sys1 =
-        let (_, poss) = until
-              (\(sys, seen) -> sys `Set.member` seen)
-              (\(sys, seen) -> (step1 sys, Set.insert sys seen))
-              (sys1, Set.empty)
-        in Set.size poss
+        let (_, poss) =
+              until
+                (\(sys, seen) -> sys `Set.member` seen)
+                (\(sys, seen) -> (step1 sys, Set.insert sys seen))
+                (sys1, Set.empty)
+         in Set.size poss
   putStrLn $ "1a: " ++ show (sum $ map energy $ transpose $ (!! 1000) $ iterate (map step1) (transpose sys0))
   putStrLn $ "1b: " ++ show (foldl' lcm 1 (map (\axis -> period (map (!! axis) sys0)) [0 .. 2]))
 
