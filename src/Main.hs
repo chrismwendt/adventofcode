@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -8,6 +9,7 @@ module Main where
 
 import Conduit
 import Control.Monad
+import qualified Control.Monad.Combinators as P
 import Control.Monad.Loops
 import Data.Char
 import qualified Data.Conduit.List as CL
@@ -18,12 +20,16 @@ import Data.List.Extra (maximumOn)
 import Data.List.Index
 import Data.List.Split
 import qualified Data.Map as Map
+import Data.Map ((!), (!?), Map)
 import Data.Maybe
 import Data.Ord
 import Data.Ratio
 import qualified Data.Set as Set
 import System.IO
 import System.Random
+import qualified Text.Megaparsec as P
+import qualified Text.Megaparsec.Char as P
+import qualified Text.Megaparsec.Char.Lexer as P
 import Text.Printf
 
 ghci :: IO ()
@@ -31,7 +37,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day13
+  day14
 
 day1 :: IO ()
 day1 = do
@@ -383,3 +389,52 @@ chunksOfC n = if n > 0 then loop n id else error $ "chunksOf size must be positi
         [] -> return ()
         nonempty -> yield nonempty
       Just a -> loop (count - 1) (rest . (a :))
+
+type Parser = P.Parsec Void String
+
+binr :: (b -> Bool) -> (Int -> b) -> Int
+binr p f =
+  let outer n =
+        if
+          | p (f (2 * n)) -> inner n (2 * n)
+          | otherwise -> outer (2 * n)
+      inner lo hi =
+        let mid = lo + (hi - lo) `div` 2
+         in if
+              | hi <= lo + 1 -> hi
+              | p (f mid) -> inner lo mid
+              | otherwise -> inner mid hi
+   in outer 1
+
+binl p f = binr p f - 1
+
+day14 :: IO ()
+day14 = do
+  in0 <- readFile "input14.txt"
+  let chemicalP = (,) <$> P.decimal <* " " <*> P.some P.alphaNumChar
+      lineP = do
+        ls <- chemicalP `P.sepBy1` ", "
+        " => "
+        (n, pduct) <- chemicalP
+        return (pduct, (n, ls))
+      parser :: Parser (Map String (Int, [(Int, String)]))
+      parser = Map.insert "ORE" (1, []) . Map.fromList <$> (lineP `P.sepBy` P.newline)
+  case P.parse parser "" in0 of
+    Left e -> putStrLn $ P.errorBundlePretty e
+    Right m -> do
+      let fetch :: Int -> String -> Map String (Int, Int) -> Map String (Int, Int)
+          fetch n chem acc0 =
+            let (q, ingreds) = m Map.! chem
+                (bought, leftover) = fromMaybe (0, 0) $ (acc0 !? chem)
+                (mul, leftover') =
+                  if
+                    | n <= leftover -> (0, leftover - n)
+                    | n > leftover -> let w = (n - leftover + q - 1) `div` q in (w, w * q - (n - leftover))
+                z = ((max (n - leftover) 0 + (q - 1)) `div` q) * q
+                acc1 = Map.insert chem (bought + mul * q, leftover') acc0
+             in foldl'
+                  (\acc (need, chm) -> fetch (mul * need) chm acc)
+                  acc1
+                  ingreds
+      putStrLn $ "1a: " ++ show (fst . (! "ORE") $ fetch 1 "FUEL" Map.empty)
+      putStrLn $ "1b: " ++ show (binl (>= (10 ^ 12)) (\n -> fst . (! "ORE") $ fetch n "FUEL" Map.empty))

@@ -9,6 +9,8 @@ dependencies:
   - extra
   - conduit
   - random
+  - megaparsec
+  - parser-combinators
 executables:
   app:
     source-dirs: src
