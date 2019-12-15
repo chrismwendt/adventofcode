@@ -1,8 +1,9 @@
 from collections import defaultdict
-from operator import itemgetter
 
 with open("input14.txt") as f:
-    recipes = {"ORE": {"unit": 1, "ingredients": []}}
+    unit = {"ORE": 1}
+    ingredients = {"ORE": []}
+
     for line in f.readlines():
         l, r = line.strip().split(" => ")
 
@@ -10,28 +11,24 @@ with open("input14.txt") as f:
             unit, name = s.split()
             return {"unit": int(unit), "name": name}
 
-        recipes[parse(r)["name"]] = {
-            "unit": parse(r)["unit"],
-            "ingredients": [parse(s) for s in l.split(", ")],
-        }
+        unit[parse(r)["name"]] = parse(r)["unit"]
+        ingredients[parse(r)["name"]] = [parse(s) for s in l.split(", ")]
 
-    inventory = defaultdict(lambda: {"bought": 0, "leftover": 0})
+    bought = defaultdict(lambda: 0)
+    leftover = defaultdict(lambda: 0)
 
-    def satisfy(n, chemical):
-        leftover, bought = itemgetter("leftover", "bought")(inventory[chemical])
-        unit, ingredients = itemgetter("unit", "ingredients")(recipes[chemical])
-
+    def satisfy(n, c):
         quantity = 0
-        if n <= leftover:
-            inventory[chemical]["leftover"] -= n
+        if n <= leftover[c]:
+            leftover[c] -= n
         else:
-            n -= inventory[chemical]["leftover"]
-            quantity = (n + (unit - 1)) // unit
-            inventory[chemical]["bought"] += quantity * unit
-            inventory[chemical]["leftover"] = (quantity * unit) - n
+            n -= leftover[c]
+            quantity = (n + unit[c] - 1) // unit[c]
+            bought[c] += quantity * unit[c]
+            leftover[c] = (quantity * unit[c]) - n
 
-        for ingredient in ingredients:
+        for ingredient in ingredients[c]:
             satisfy(quantity * ingredient["unit"], ingredient["name"])
 
     satisfy(1, "FUEL")
-    print(inventory["ORE"]["bought"])
+    print(bought["ORE"])
