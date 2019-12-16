@@ -11,6 +11,7 @@ dependencies:
   - random
   - megaparsec
   - parser-combinators
+  - mtl
 executables:
   app:
     source-dirs: src

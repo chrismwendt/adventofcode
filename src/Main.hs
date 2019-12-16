@@ -11,8 +11,11 @@ import Conduit
 import Control.Monad
 import qualified Control.Monad.Combinators as P
 import Control.Monad.Loops
+import Control.Monad.ST
+import Control.Monad.State.Lazy
 import Data.Char
 import qualified Data.Conduit.List as CL
+import Data.Foldable
 import Data.Function
 import Data.IORef
 import Data.List
@@ -24,7 +27,12 @@ import Data.Map ((!), (!?), Map)
 import Data.Maybe
 import Data.Ord
 import Data.Ratio
+import Data.STRef
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
+import Data.Set (Set)
+import Debug.Trace
 import System.IO
 import System.Random
 import qualified Text.Megaparsec as P
@@ -37,7 +45,7 @@ ghci = main
 
 main :: IO ()
 main = do
-  day14
+  day15
 
 day1 :: IO ()
 day1 = do
@@ -47,13 +55,13 @@ day1 = do
   putStrLn $ "1a: " ++ show (sum $ map (fuel . read) $ lines input)
   putStrLn $ "1b: " ++ show (sum $ map (allfuel . read) $ lines input)
 
-type State = (Int, Int, Map.Map Int Int)
+type VMState = (Int, Int, Map.Map Int Int)
 
-data SingleStep = Halt | Input (Int -> State) | Output (Int, State) | Continue State
+data SingleStep = Halt | Input (Int -> VMState) | Output (Int, VMState) | Continue VMState
 
-data StepIO = IOHalt | IOInput (Int -> State) | IOOutput (Int, State)
+data StepIO = IOHalt | IOInput (Int -> VMState) | IOOutput (Int, VMState)
 
-explain :: State -> String
+explain :: VMState -> String
 explain (base, pc, mem) =
   let val i = fromMaybe 0 $ mem Map.!? i
       digit num n = num `div` (10 ^ n) `mod` 10
@@ -82,8 +90,8 @@ explain (base, pc, mem) =
         99 -> ""
         other -> error ("Invalid opcode " ++ show (val pc))
 
-step :: State -> SingleStep
-step (base, pc, mem) =
+singlestep :: VMState -> SingleStep
+singlestep (base, pc, mem) =
   let val i = fromMaybe 0 $ mem Map.!? i
       digit num n = num `div` (10 ^ n) `mod` 10
       l param = case val pc `digit` (param - 1 + 2) of
@@ -104,15 +112,15 @@ step (base, pc, mem) =
         99 -> Halt
         other -> error ("Invalid opcode " ++ show (val pc))
 
-stepio :: State -> StepIO
-stepio state = case step state of
+stepio :: VMState -> StepIO
+stepio state = case singlestep state of
   Halt -> IOHalt
   Input i -> IOInput i
   Output i -> IOOutput i
   Continue state' -> stepio state'
 
 instrument input0 mem0 =
-  let recur input state = state : case step state of
+  let recur input state = state : case singlestep state of
         Halt -> []
         Input feed -> recur (tail input) $ feed (head input)
         Output (o, state') -> recur input state'
@@ -128,11 +136,11 @@ run input0 mem0 =
 
 runio :: Map.Map Int Int -> ConduitT Int Int IO ()
 runio mem0 =
-  let recur :: State -> ConduitT Int Int IO ()
+  let recur :: VMState -> ConduitT Int Int IO ()
       recur state = case stepio state of
         IOHalt -> return ()
         IOInput feed -> await >>= \case
-          Nothing -> liftIO $ putStrLn ("error: no input left\nstate: " ++ show state)
+          Nothing -> liftIO $ putStrLn "halting, exhausted input"
           Just i -> recur (feed i)
         IOOutput (o, state') -> yield o >> recur state'
    in recur (0, 0, mem0)
@@ -146,6 +154,31 @@ runioask mem0 ask = do
           IOInput feed -> ask >>= loop . feed
           IOOutput (o, state') -> writeIORef stater state' >> return (Just o)
   return (readIORef stater >>= loop)
+
+type VMStateIO = (VMState, Seq Int, Seq Int)
+
+data StopReason = StopInput | StopHalt
+
+emptyVMStateIO mem = ((0, 0, mem), Seq.empty, Seq.empty)
+
+newVM mem = mkVM <$> newSTRef (emptyVMStateIO mem)
+
+mkVM :: STRef s VMStateIO -> (Int -> ST s StopReason, ST s (Maybe Int))
+mkVM ref =
+  let crank = readSTRef ref >>= \(vm, iseq, oseq) -> case stepio vm of
+        IOHalt -> return StopHalt
+        IOInput feed -> case Seq.viewl iseq of
+          Seq.EmptyL -> return StopInput
+          (i Seq.:< iseq') -> writeSTRef ref (feed i, iseq', oseq) >> crank
+        IOOutput (o, vm') -> writeSTRef ref (vm', iseq, oseq Seq.|> o) >> crank
+      input i = modifySTRef' ref (\(vm, iseq, oseq) -> (vm, iseq Seq.|> i, oseq)) >> crank
+      output = do
+        crank
+        (vm, iseq, oseq) <- readSTRef ref
+        case Seq.viewr oseq of
+          Seq.EmptyR -> return Nothing
+          oseq' Seq.:> o -> Just o <$ writeSTRef ref (vm, iseq, oseq')
+   in (input, output)
 
 day2 :: IO ()
 day2 = do
@@ -257,6 +290,8 @@ day9 = do
   putStrLn $ "1a: " ++ show (head $ run [1] mem0)
   putStrLn $ "1b: " ++ show (head $ run [2] mem0)
 
+type V2 = (Int, Int)
+
 v2minus :: (Int, Int) -> (Int, Int) -> (Int, Int)
 v2minus (ax, ay) (bx, by) = (ax - bx, ay - by)
 
@@ -296,11 +331,11 @@ day11 = do
   in0 <- readFile "input11.txt"
   let prog = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," in0)
   let hull color0 =
-        let recur :: State -> Map.Map (Int, Int) Int -> Map.Map (Int, Int) () -> (Int, Int) -> Int -> (Map.Map (Int, Int) Int, Map.Map (Int, Int) ())
-            recur state h ptd pos dir = case step state of
+        let recur :: VMState -> Map.Map (Int, Int) Int -> Map.Map (Int, Int) () -> (Int, Int) -> Int -> (Map.Map (Int, Int) Int, Map.Map (Int, Int) ())
+            recur state h ptd pos dir = case singlestep state of
               Halt -> (h, ptd)
               Input feed -> recur (feed (fromMaybe 0 (h Map.!? pos))) h ptd pos dir
-              Output (color, state') -> case step state' of
+              Output (color, state') -> case singlestep state' of
                 Output (turn, state'') ->
                   let dir' = (if turn == 0 then (+ negate 1) else (+ 1)) dir `mod` 4
                       pos' = case dir' of
@@ -438,3 +473,106 @@ day14 = do
                   ingreds
       putStrLn $ "1a: " ++ show (fst . (! "ORE") $ fetch 1 "FUEL" Map.empty)
       putStrLn $ "1b: " ++ show (binl (>= (10 ^ 12)) (\n -> fst . (! "ORE") $ fetch n "FUEL" Map.empty))
+
+data Dir = U | D | L | R deriving (Eq, Ord, Show)
+
+dirtov2 :: Dir -> V2
+dirtov2 U = (0, 1)
+dirtov2 D = (0, -1)
+dirtov2 L = (-1, 0)
+dirtov2 R = (1, 0)
+
+negatedir :: Dir -> Dir
+negatedir U = D
+negatedir D = U
+negatedir L = R
+negatedir R = L
+
+var = newSTRef
+
+readr = readSTRef
+
+(.=) = writeSTRef
+
+(.%) = modifySTRef
+
+findpath :: Set V2 -> V2 -> V2 -> Maybe [Dir]
+findpath visitable a b = runST $ do
+  visitedr <- var (Set.singleton a)
+  frontierr <- var (Map.singleton a Seq.empty)
+  let loop = readr frontierr >>= \frontier ->
+        if Map.null frontier
+          then return Nothing
+          else case frontier !? b of
+            Just path -> return (Just path)
+            Nothing -> do
+              forM_ (Map.toList frontier) $ \(pos, path) -> do
+                frontierr .% Map.delete pos
+                let ins dir = do
+                      let pos' = pos `v2plus` dirtov2 dir
+                      visited <- readr visitedr
+                      when (Set.member pos' visitable && Set.notMember pos' visited) $ do
+                        frontierr .% Map.insert pos' (path Seq.|> dir)
+                        visitedr .% Set.insert pos'
+                mapM_ ins [U, D, L, R]
+              loop
+  fmap toList <$> loop
+
+-- let zero1 = (Set.empty, Map.empty)
+--     dirs visitable pos = filter (\dir -> let pos' = pos `v2plus` dir in pos' `Set.member` visitable && pos' `Set.member` visited)
+--     step1 zero2 =
+--       let step2 (visited, m) =
+--       in foldl' step2 zero2 (dirs (Set.member visitable, Set.notMember visited . (`v2plus`)))
+--     done (_, m) = b `Map.member` m
+--     extract (_, m) = m Map.! b
+--  in extract $ until done step1 zero1
+
+day15 :: IO ()
+day15 = do
+  in0 <- readFile "input2019-15.txt"
+  let mem = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," in0)
+      res = runST $ do
+        (input, output) <- newVM mem
+        curr <- newSTRef (0, 0)
+        oxyr <- newSTRef Nothing
+        visitabler <- newSTRef (Set.singleton (0, 0))
+        toexplorer <- newSTRef (Set.singleton (0, 0))
+        exploredr <- newSTRef Set.empty
+        let dirtoi dir = fromJust $ lookup dir $ zip [U, D, L, R] [1, 2, 3, 4]
+            move dir = do
+              input (dirtoi dir)
+              output >>= \(Just o) -> do
+                when (o /= 0) (curr .% (`v2plus` dirtov2 dir))
+                cur <- readr curr
+                visitabler .% Set.insert cur
+                when (o == 2) (oxyr .= Just cur)
+            moveto visitable pos = do
+              cur <- readSTRef curr
+              let Just path = findpath visitable cur pos
+              mapM_ move path
+            explore = Set.lookupMin <$> readr toexplorer >>= \case
+              Nothing -> return ()
+              Just next -> do
+                return ()
+                toexplorer .% Set.delete next
+                visitable <- readr visitabler
+                moveto (Set.insert next visitable) next
+                exploredr .% Set.insert next
+                cur <- readSTRef curr
+                when (cur == next) $ do
+                  explored <- readr exploredr
+                  mapM_ (\n -> toexplorer .% Set.insert n) $ filter (\n -> Set.notMember n explored) $ map (\dir -> cur `v2plus` dirtov2 dir) [U, D, L, R]
+                explore
+        -- pop 1 toexplore: X
+        -- moveto X (consider X visitable)
+        -- mark explored
+        -- if cur == X, add neighbors of X that are not explored to toexplore
+        explore
+        visitable <- readr visitabler
+        Just oxy <- readr oxyr
+        return $ findpath visitable (0, 0) oxy
+  -- Just oxy <- readr oxyr
+  -- return $ findpath visitable (0, 0) oxy
+  print res
+  print (length <$> res)
+  return ()
