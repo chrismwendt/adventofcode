@@ -518,6 +518,28 @@ findpath visitable a b = runST $ do
               loop
   fmap toList <$> loop
 
+pathseverywhere :: Set V2 -> V2 -> [[Dir]]
+pathseverywhere visitable start = runST $ do
+  visitedr <- var (Set.singleton start)
+  frontierr <- var (Map.singleton start Seq.empty)
+  paths <- var []
+  let loop = readr frontierr >>= \frontier ->
+        if Map.null frontier
+          then readr paths
+          else do
+            forM_ (Map.toList frontier) $ \(pos, path) -> do
+              paths .% (toList path :)
+              frontierr .% Map.delete pos
+              let ins dir = do
+                    let pos' = pos `v2plus` dirtov2 dir
+                    visited <- readr visitedr
+                    when (Set.member pos' visitable && Set.notMember pos' visited) $ do
+                      frontierr .% Map.insert pos' (path Seq.|> dir)
+                      visitedr .% Set.insert pos'
+              mapM_ ins [U, D, L, R]
+            loop
+  loop
+
 -- let zero1 = (Set.empty, Map.empty)
 --     dirs visitable pos = filter (\dir -> let pos' = pos `v2plus` dir in pos' `Set.member` visitable && pos' `Set.member` visited)
 --     step1 zero2 =
@@ -531,7 +553,7 @@ day15 :: IO ()
 day15 = do
   in0 <- readFile "input2019-15.txt"
   let mem = Map.fromList $ zip [0 ..] (map (read :: String -> Int) $ splitOn "," in0)
-      res = runST $ do
+      (visitable, oxy) = runST $ do
         (input, output) <- newVM mem
         curr <- newSTRef (0, 0)
         oxyr <- newSTRef Nothing
@@ -563,16 +585,10 @@ day15 = do
                   explored <- readr exploredr
                   mapM_ (\n -> toexplorer .% Set.insert n) $ filter (\n -> Set.notMember n explored) $ map (\dir -> cur `v2plus` dirtov2 dir) [U, D, L, R]
                 explore
-        -- pop 1 toexplore: X
-        -- moveto X (consider X visitable)
-        -- mark explored
-        -- if cur == X, add neighbors of X that are not explored to toexplore
         explore
         visitable <- readr visitabler
         Just oxy <- readr oxyr
-        return $ findpath visitable (0, 0) oxy
-  -- Just oxy <- readr oxyr
-  -- return $ findpath visitable (0, 0) oxy
-  print res
-  print (length <$> res)
+        return $ (visitable, oxy)
+  putStrLn $ "1a: " ++ show (length $ fromJust $ findpath visitable (0, 0) oxy)
+  putStrLn $ "1b: " ++ show (maximum $ map length $ pathseverywhere visitable oxy)
   return ()
